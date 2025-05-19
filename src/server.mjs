@@ -3,16 +3,22 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
+import authRoutes from "./routes/auth.mjs";
+import profileRoutes from "./routes/profile.mjs";
+import { verifyToken } from "./middleware/auth.mjs";
+import dotenv from 'dotenv';
+dotenv.config();
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 const prisma = new PrismaClient();
 const saltrounds = 10;
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
 const corsOptions = {
   origin: "http://localhost:8080",
-  methods: "GET,HEAD,PUT,PATH,POST,DELETE",
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
 };
 
@@ -25,11 +31,11 @@ app.get("/", (req, res) => {
 
 // POST /api/auth/signup
 app.post("/api/auth/signup", async (req, res) => {
-  const { name, email, password } = req.body;
+  const { username, email, password } = req.body;
   console.log("hello from backend");
-  console.log("name: ", name, "email: ", email, "password: ", password);
+  console.log("username: ", username, "email: ", email, "password: ", password);
 
-  if (!name || !email || !password) {
+  if (!username || !email || !password) {
     return res
       .status(400)
       .json({ message: "Please provide name, email and password." });
@@ -45,7 +51,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const newUser = await prisma.user.create({
       data: {
-        name,
+        username,
         email,
         password: hashedPassword,
       },
@@ -64,7 +70,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
 // POST /api/auth/signin
 app.post("/api/auth/signin", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
 
   if (!email || !password) {
     return res
@@ -84,14 +90,15 @@ app.post("/api/auth/signin", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
+    const expiresIn = rememberMe ? "30d" : "1h";
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
-      expiresIn: "1h",
+      expiresIn,
     });
 
-    // In a real application, you would generate and return a JWT or session token here
     res.status(200).json({
       message: "Sign in successful.",
       token,
+      expiresIn,
     });
   } catch (error) {
     console.error("Error during signin:", error);
@@ -100,30 +107,16 @@ app.post("/api/auth/signin", async (req, res) => {
 });
 
 // example for protected route
-app.get("/api/protected", async (req, res) => {
-  const authHeader = req.headers.authorization;
-
-  if (authHeader) {
-    const token = authHeader.split(" ")[1]; // Bearer <token>
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (err) {
-        return res.sendStatus(403); // forbidden
-      }
-
-      req.user = user;
-      res.json({
-        message: "This is a protected route.",
-        userId: req.user.userId,
-      });
-    });
-  } else {
-    res.sendStatus(401); // Unauthorized
-  }
+app.get("/api/protected", verifyToken, (req, res) => {
+  res.json({ message: "This is a protected route", user: req.user });
 });
 
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
+
 app.listen(port, () => {
-  console.log(`Backend server listening at http://localhost:${port}`);
+  console.log(`Server is running on port ${port}`);
 });
 
 async function main() {}

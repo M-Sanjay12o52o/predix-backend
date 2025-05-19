@@ -6,19 +6,172 @@
 
 generator client {
   provider = "prisma-client-js"
-  output = "../../backend/node_modules/@prisma/client"
+  // output = "../../backend/node_modules/@prisma/client"
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-    id Int @id @default(autoincrement())
-    email String @unique
-    name String?
-    password String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  username          String?
+  bio               String?   @db.Text
+  location          String?
+  website           String?
+  role              String    @default("USER")
+  resetToken        String?   @unique
+  resetTokenExpiry  DateTime?
+  emailVerified     Boolean   @default(false)
+  emailVerificationToken       String?   @unique
+  emailVerificationTokenExpiry DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  markets           Market[]
+  trades            Trade[]
+  comments          Comment[]
+  resolvedMarkets   MarketResolution[]
+  reputation        UserReputation?
+  notifications     Notification[]
+  likes             Like[]
+  following         Follow[] @relation("UserFollowing") // Users this user is following
+  followers         Follow[] @relation("UserFollowers") // Users following this user
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  markets   Market[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Market {
+  id          String    @id @default(cuid())
+  title       String
+  description String
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  status      String    @default("ACTIVE")
+  expiryDate  DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  creatorId   String
+  createdBy   User      @relation(fields: [creatorId], references: [id])
+  outcomes    Outcome[]
+  trades      Trade[]
+  comments    Comment[]
+  resolution  MarketResolution?
+  likes       Like[]
+  followers   Follow[] @relation("MarketFollowers") // Users following this market
+}
+
+model Outcome {
+  id                String   @id @default(cuid())
+  name              String
+  probability       Float    @default(0)
+  marketId          String
+  market            Market   @relation(fields: [marketId], references: [id])
+  trades            Trade[]
+  resolvedMarkets   MarketResolution[] @relation("ResolvedOutcome")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Trade {
+  id        String   @id @default(cuid())
+  amount    Float
+  price     Float
+  type      String   // BUY, SELL
+  status    String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  marketId  String
+  market    Market   @relation(fields: [marketId], references: [id])
+  outcomeId String
+  outcome   Outcome  @relation(fields: [outcomeId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  marketId  String
+  market    Market   @relation(fields: [marketId], references: [id])
+  likes     Like[]
+}
+
+model MarketResolution {
+  id               String   @id @default(cuid())
+  marketId         String   @unique
+  market           Market   @relation(fields: [marketId], references: [id])
+  resolvedOutcomeId String
+  resolvedOutcome   Outcome  @relation("ResolvedOutcome", fields: [resolvedOutcomeId], references: [id])
+  evidence         String
+  status           String   @default("PENDING") // PENDING, APPROVED, DISPUTED, REJECTED
+  resolvedAt       DateTime?
+  resolvedBy       String
+  resolver         User     @relation(fields: [resolvedBy], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model UserReputation {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id])
+  score               Float     @default(0)
+  predictionsMade     Int       @default(0)
+  correctPredictions  Int       @default(0)
+  predictionAccuracy  Float     @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  type      String
+  message   String    @db.Text
+  link      String?
+  isRead    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Like {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  marketId    String?
+  market      Market?   @relation(fields: [marketId], references: [id])
+  commentId   String?
+  comment     Comment?  @relation(fields: [commentId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, marketId, commentId]) // Ensure a user can only like a market/comment once
+}
+
+model Follow {
+  id                String    @id @default(cuid())
+  followerId        String
+  follower          User      @relation("UserFollowing", fields: [followerId], references: [id])
+  followingId       String?
+  followingUser     User?     @relation("UserFollowers", fields: [followingId], references: [id])
+  followingMarketId String?
+  followingMarket   Market?   @relation("MarketFollowers", fields: [followingMarketId], references: [id])
+  createdAt         DateTime  @default(now())
+
+  @@unique([followerId, followingId]) // Ensure a user can only follow a user once
+  @@unique([followerId, followingMarketId]) // Ensure a user can only follow a market once
 }
